@@ -30,7 +30,16 @@ skim(rating_data)
 head(rating_data)
 rating_data %>% 
         group_by(userId) %>% 
-        summarise(count=n())
+        summarise(count=n(),average_rating=mean(rating))  %>% 
+  arrange(desc(average_rating)) #movie count of users and user with the highest rating
+
+rating_data %>% 
+  group_by(rating) %>% 
+  summarise(count = n()) %>%
+  ggplot(aes(rating,count)) + geom_col() #rating distribution
+
+rating_data <- rating_data %>% filter(rating > 1)
+movies_data <- movies_data[movies_data$movieId %in% rating_data$movieId,]
 
                               ### DATA PREPROCESSING ####
 
@@ -39,6 +48,7 @@ rating_data %>%
 # that can be used with the userId and movieId since both columns are integer
 
 genre<-as.data.frame(movies_data$genres)
+
 genre_trans<-as.data.frame(tstrsplit(genre[,1],
                                       "[|]",type.convert = TRUE),
                             stringsAsFactors = FALSE)#split and transpose
@@ -47,7 +57,7 @@ genre_list<-c("Action","Adventure","Animation","Children","Comedy",
               "Crime","Documentary","Drama","Fantasy","Film-Noir",
               "Horror","Musical","Mystery","Romance","Sci_Fic","Thriller",
               "War","Western")
-genre_mat<-matrix(0,10330,18)#creating a matrix of zero
+genre_mat<-matrix(0,10238,18)#creating a matrix of zero
 genre_mat[1,]<-genre_list
 colnames(genre_mat)<-genre_list
 
@@ -62,7 +72,7 @@ for(i in 1:nrow(genre_trans)) {
 genre_df<-as.data.frame(genre_mat[-1,],
                           stringsAsFactors = FALSE)
 for(col in 1:ncol(genre_df)) {
-        genre_df[,col]<-as.integer(genre_df2[,col])
+        genre_df[,col]<-as.integer(genre_df[,col])
 }
 
 str(genre_df)
@@ -77,8 +87,7 @@ head(SearchMatrix)
 ratingMatrix<-reshape2::dcast(rating_data,userId~movieId,
                     value.var = "rating",na.rm=FALSE)#matrix with userID as row and movieID as col
 ratingMatrix<-as.matrix(ratingMatrix[,-1])
-ratingMatrix<-as(ratingMatrix,"realRatingMatrix")# convert to recommenderlab sparse matrix
-ratingMatrix
+ratingMatrix<-as(ratingMatrix,"realRatingMatrix")# convert to realRatingMatrix
 
 
                     ###Exploratory Analysis##
@@ -154,10 +163,10 @@ ggplot(table_rating[1:10,], aes(x=title,y=rating)) +
 
 #Selecting useful data
 
-movie_ratings <- ratingMatrix[rowCounts(ratingMatrix) > 50,
-                              colCounts(ratingMatrix) > 50]
+ratingMatrix <- ratingMatrix[rowCounts(ratingMatrix) > 30,
+                              colCounts(ratingMatrix) > 30]
 #minimum threshold for number of users that have rated a movie
-Movie_ratings
+ratingMatrix
 
 minimum_movies<- quantile(rowCounts(movie_ratings), 0.98)
 minimum_users <- quantile(colCounts(movie_ratings), 0.98)
@@ -195,19 +204,16 @@ image(good_rated_films[rowCounts(movie_ratings) > binary_minimum_movies,
                   ###Item based Collaborative filtering system###
 
 #Splitting data in train and test set
-sampled_data<- sample(x = c(TRUE, FALSE),
-                      size = nrow(movie_ratings),
-                      replace = TRUE,
-                      prob = c(0.8, 0.2))
-training_data <- movie_ratings[sampled_data, ]
-testing_data <- movie_ratings[!sampled_data, ]
+eval<-evaluationScheme(data = ratingMatrix,given=7,
+                       method = "cross-validation",
+                       k=10,goodRating = 1)
 
-recommendation_system <- recommenderRegistry$get_entries(dataType ="realRatingMatrix")
+asrecommendation_system <- recommenderRegistry$get_entries(dataType ="realRatingMatrix")
 recommendation_system$IBCF_realRatingMatrix$parameters
 
-recommen_model <- Recommender(data = training_data,
+recommen_model <- Recommender(data = getData(eval,"train"),
                               method = "IBCF",
-                              parameter = list(k = 30))
+                              parameter = list(k = 50))
 
 recommen_model
 class(recommen_model)
@@ -217,7 +223,7 @@ class(model_info$sim)
 dim(model_info$sim)
 top_items <- 20
 image(model_info$sim[1:top_items, 1:top_items],
-      main = "Heatmap of the first rows and columns")
+      main = "Heatmap of the first 20  rows and columns")
 
 sum_rows <- rowSums(model_info$sim > 0)
 table(sum_rows)
@@ -226,18 +232,18 @@ sum_cols <- colSums(model_info$sim > 0)
 qplot(sum_cols, fill=I("steelblue"), col=I("red"))+ 
         ggtitle("Distribution of the column count")
 
-#model validation
+#Prediction
 
-top_recommendations <- 10 # the number of items to recommend to each user
+top_recommendations <- 5 # the number of items to recommend to each user
 predicted_recommendations <- predict(object = recommen_model,
-                                     newdata = testing_data,
+                                     newdata = getData(eval, "known"),
                                      n = top_recommendations)
 predicted_recommendations
 
 
 user1 <- predicted_recommendations@items[[1]] # recommendation for the first user
 movies_user1 <- predicted_recommendations@itemLabels[user1]
-for (index in 1:10){
+for (index in 1:5){
   movies_user1[index] <- as.character(subset(movies_data,
                                                    movies_data$movieId == movies_user1[index])$title)
 }
@@ -245,13 +251,18 @@ movies_user1
 
 
 recommendation_matrix <- sapply(predicted_recommendations@items,
-                                function(x){ as.integer(colnames(movie_ratings)[x]) }) # matrix with the recommendations for each user
+                                function(x){ as.integer(colnames(ratingMatrix)[x]) }) # matrix with the recommendations for each user
 dim(recommendation_matrix)
 
-for (i in 1:10){
-  for (j in 1:102) {
-    recommendation_matrix[i,j] <- as.character(subset(movies_data,
-                                                         movies_data$movieId == recommendation_matrix[i,j])$title)
+for (e in 1:5){
+  for (f in 1:58) {
+    recommendation_matrix[e,f] <- as.character(subset(movies_data,
+                                                         movies_data$movieId == recommendation_matrix[e,f])$title)
   }
 }
 recommendation_matrix[,1:4] # Recommendation for the first 4 users
+
+#Model evaluation
+calcPredictionAccuracy(data = getData(eval,"unknown"),
+                       x = predicted_recommendations,
+                       goodRating = 1,given = 7)# model have a precision of 0.23
