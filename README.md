@@ -1,5 +1,5 @@
 # Movie_Recommendation_system
-This is a system aimed at suggesting relevant movies to users based on past interactions.In an era of information overload it is difficult for users to get items they are really interested in,the goal of this project is to develop a model that will predict movies users are interested in and reduce the stress of having to look for movies on your own.
+This is a system aimed at suggesting relevant movies to users based on past interactions.In an era of information overload it is difficult for users to get items they are really interested in,the goal of this project is to develop a model that will predict movies users are interested using rating data collected to enhance user experience in an online streaming service
 
 **The Algorithm**
 Collaborative Filtering evaluates products using users’ ratings (explicit or implicit) from historical
